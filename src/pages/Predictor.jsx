@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { loadCutoffsData, getPredictions, BRANCH_OPTIONS } from '../utils/predictionEngine';
 import { readShortlist, writeShortlist, subscribeShortlist } from '../utils/shortlist';
-import InstituteInsights from '../components/InstituteInsights';
+import { InsightsButton, InsightsRow } from '../components/InstituteInsights';
 import '../styles/animations.css';
 import '../styles/insights.css';
 
@@ -30,6 +30,7 @@ export default function Predictor() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [openKey, setOpenKey] = useState(null); // which result row has its Fees & Placements details open (one at a time)
   const [shortlisted, setShortlisted] = useState(readShortlist);
   const resultsRef = useRef(null);
 
@@ -42,6 +43,7 @@ export default function Predictor() {
 
     setLoading(true);
     setError('');
+    setOpenKey(null);
     try {
       const cutoffsData = await loadCutoffsData();
 
@@ -172,7 +174,7 @@ export default function Predictor() {
               <div className="filter-pills">
                 {FILTERS.map((filter) => (
                   <button key={filter} type="button" aria-pressed={activeFilter === filter}
-                    className={`filter-pill${activeFilter === filter ? ' active' : ''}`} onClick={() => setActiveFilter(filter)}>
+                    className={`filter-pill${activeFilter === filter ? ' active' : ''}`} onClick={() => { setActiveFilter(filter); setOpenKey(null); }}>
                     {filter}
                   </button>
                 ))}
@@ -197,24 +199,28 @@ export default function Predictor() {
                     <tbody>
                       {filteredResults.map((item, idx) => {
                         const tag = item.tag?.toLowerCase();
+                        const rowKey = `${item.institute}-${item.branch}-${idx}`;
+                        const open = openKey === rowKey;
                         return (
-                          <tr key={`${item.institute}-${item.branch}-${idx}`} className="animate-table-row"
-                            style={{ animationDelay: `${Math.min(idx * 0.04, 0.4)}s` }}>
-                            <td className="cell-institute">{item.institute}</td>
-                            <td className="cell-branch">{item.branch}</td>
-                            <td className="cell-rank nowrap" data-label="Closing rank">{item.expRank.toLocaleString()}</td>
-                            <td className="nowrap">
-                              <span className={`chance-tag ${tag}`}>{item.tag} {item.prob ? `(${item.prob})` : ''}</span>
-                            </td>
-                            <td className="cell-action">
-                              <div className="action-group">
-                                <InstituteInsights institute={item.institute} />
-                                <button type="button" className="btn btn-secondary shortlist-btn" disabled={isSaved(item)} onClick={() => handleShortlist(item)}>
-                                  {isSaved(item) ? 'Saved' : '+ Shortlist'}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
+                          <React.Fragment key={rowKey}>
+                            <tr className={`animate-table-row${open ? ' is-open' : ''}`} style={{ animationDelay: `${Math.min(idx * 0.04, 0.4)}s` }}>
+                              <td className="cell-institute">{item.institute}</td>
+                              <td className="cell-branch">{item.branch}</td>
+                              <td className="cell-rank nowrap" data-label="Closing rank">{item.expRank.toLocaleString()}</td>
+                              <td className="nowrap">
+                                <span className={`chance-tag ${tag}`}>{item.tag} {item.prob ? `(${item.prob})` : ''}</span>
+                              </td>
+                              <td className="cell-action">
+                                <div className="action-group">
+                                  <InsightsButton open={open} controls={`insights-${idx}`} onToggle={() => setOpenKey(open ? null : rowKey)} />
+                                  <button type="button" className="btn btn-secondary shortlist-btn" disabled={isSaved(item)} onClick={() => handleShortlist(item)}>
+                                    {isSaved(item) ? 'Saved' : '+ Shortlist'}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            {open && <InsightsRow id={`insights-${idx}`} institute={item.institute} />}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>

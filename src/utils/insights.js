@@ -1,10 +1,27 @@
-const raw = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-// Without "https://" the browser treats the address as a path on THIS website, and Vercel answers POSTs with 405.
-const BASE = raw && !/^https?:\/\//i.test(raw) ? `https://${raw}` : raw;
+// Accepts what people really paste into a dashboard: spaces, quotes, a missing "https://", a trailing slash,
+// or a markdown link such as "[https://x.com](https://x.com)". Returns a clean "https://host" (or "").
+export function cleanBase(value) {
+  let s = String(value || '').trim();
+  const md = s.match(/\]\(\s*(https?:\/\/[^)\s]+)\s*\)/i);
+  if (md) s = md[1];
+  const url = s.match(/https?:\/\/[^\s\])"'<>]+/i);
+  if (url) s = url[0];
+  s = s.replace(/^[[("'\s]+|[\])"'\s]+$/g, '').replace(/\/+$/, '');
+  return s && !/^https?:\/\//i.test(s) ? `https://${s}` : s;
+}
+
+const BASE = cleanBase(import.meta.env.VITE_API_URL);
 export const insightsEnabled = Boolean(BASE); // the feature needs the backend, so it hides itself without one
 
 async function call(path, options) {
-  const res = await fetch(`${BASE}${path}`, options);
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, options);
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    console.error('[insights] request failed:', e); // technical detail stays in the console
+    throw new Error('Could not reach the insights server. Please try again.');
+  }
   if (!res.ok) {
     let msg = `Could not load insights right now (error ${res.status}).`; // the number tells you what the server answered
     if (res.status === 405) {

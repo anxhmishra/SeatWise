@@ -1,41 +1,47 @@
-/* Buttons sit together in the Action column, as before */
-.cell-action { position: relative; }
+/* ---- Button (Action column) ---- */
 .action-group { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; }
-
-.insights-toggle { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; cursor: pointer; min-height: 36px;
+.insights-btn { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; cursor: pointer; min-height: 36px;
   padding: 0.4rem 0.85rem; border-radius: 8px; font: inherit; font-size: 0.85rem; font-weight: 600;
   color: #38bdf8; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.35); transition: all 0.2s ease; }
-.insights-toggle:hover, .insights-toggle.open { border-color: #38bdf8; background: rgba(56, 189, 248, 0.16); }
-.insights-toggle:focus-visible, .insights-link:focus-visible { outline: 2px solid var(--accent-yellow); outline-offset: 2px; }
+.insights-btn:hover, .insights-btn.open { border-color: #38bdf8; background: rgba(56, 189, 248, 0.16); }
+.insights-btn:focus-visible, .insights-retry:focus-visible { outline: 2px solid var(--accent-yellow); outline-offset: 2px; }
 
-/* Popover under the buttons (desktop) */
-.insights-panel { position: absolute; right: 0; top: calc(100% - 0.6rem); z-index: 30; width: min(380px, 86vw); padding: 0.9rem 1rem;
-  border-radius: 10px; background: #0d1323; border: 1px solid var(--card-border); box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
-  font-size: 0.85rem; font-weight: 400; color: #d1d5db; text-align: left; white-space: normal; }
-.insights-panel p { margin: 0; }
-.insights-muted { color: var(--text-muted); }
-.insights-error { color: #f87171; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.insights-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; margin: 0; }
-.insights-grid dt { color: var(--text-muted); }
-.insights-grid dd { margin: 0; color: #fff; font-weight: 600; }
-.insights-note { margin-top: 0.7rem !important; font-size: 0.72rem; opacity: 0.75; line-height: 1.4; }
+/* ---- The row that opens under a result ---- */
+.results-table tbody tr.is-open { border-bottom-color: transparent; background: rgba(56, 189, 248, 0.04); }
+.results-table tbody tr.insights-row { background: rgba(56, 189, 248, 0.04); }
+.results-table .insights-row > td { padding: 0 1rem 1.1rem; white-space: normal; }
+.insights-card { border: 1px solid rgba(56, 189, 248, 0.2); background: rgba(13, 19, 35, 0.6); border-radius: 12px; padding: 1rem 1.1rem;
+  font-size: 0.875rem; font-weight: 400; color: #d1d5db; text-align: left; }
+.insights-card p { margin: 0; }
+.insights-status { display: flex; align-items: center; gap: 0.6rem; color: var(--text-muted); }
+.insights-spinner { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(56, 189, 248, 0.25); border-top-color: #38bdf8; animation: insightsSpin 0.8s linear infinite; }
+@keyframes insightsSpin { to { transform: rotate(360deg); } }
+.insights-error { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; color: #f87171; overflow-wrap: anywhere; }
+.insights-error span { min-width: 0; }
+.insights-retry { flex-shrink: 0; cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 600; color: #f87171; background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.4); border-radius: 6px; padding: 0.25rem 0.8rem; }
+
+.insights-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; margin: 0; }
+.insights-tile { background: rgba(255, 255, 255, 0.045); border-radius: 10px; padding: 0.65rem 0.85rem; min-width: 0; }
+.insights-tile.wide { grid-column: 1 / -1; }
+.insights-tile dt { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+.insights-tile dd { margin: 0; font-size: 1rem; font-weight: 700; color: #fff; overflow-wrap: anywhere; }
+.insights-note { margin-top: 0.8rem !important; font-size: 0.72rem; opacity: 0.75; line-height: 1.45; }
 .insights-note a { color: #38bdf8; }
-.insights-link { flex-shrink: 0; cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 600; color: #f87171; background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.4); border-radius: 6px; padding: 0.15rem 0.7rem; }
 
-/* On wide screens let the popover overflow the table box instead of being clipped */
-@media (min-width: 1100px) { .table-scroll { overflow: visible; } }
+/* Fallback "typical for this kind of institute": clearly different from real data */
+.insights-estimate { margin-top: 0.8rem; padding: 0.8rem; border: 1px dashed rgba(245, 158, 11, 0.5); border-radius: 10px; background: rgba(245, 158, 11, 0.06); }
+.insights-estimate-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.7rem !important; font-size: 0.8rem; color: #fbbf24; }
+.insights-badge { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.55rem; border-radius: 99px; background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); }
+.insights-estimate .insights-note { margin-top: 0.7rem !important; }
 
-/* Phones: each result is a card, so the panel drops onto its own full-width line inside it */
+/* ---- Phones: the open result card and its details join into one card ---- */
 @media (max-width: 700px) {
   .cell-action .action-group { flex-wrap: wrap; justify-content: stretch; }
-  .cell-action .action-group > .btn, .cell-action .action-group > .insights-toggle { flex: 1 1 140px; width: auto; justify-content: center; }
-  .insights-panel { position: static; flex: 1 1 100%; width: auto; box-shadow: none; background: rgba(255, 255, 255, 0.04); }
+  .cell-action .action-group > .btn, .cell-action .action-group > .insights-btn { flex: 1 1 140px; width: auto; justify-content: center; }
+  .results-table tbody tr.is-open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent; margin-bottom: 0; }
+  .results-table tbody tr.insights-row { display: block; margin-top: 0; padding: 0 0.75rem 0.85rem; border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+  .results-table tbody tr.insights-row > td { padding: 0; }
+  .insights-error { flex-wrap: wrap; }
 }
-@media (pointer: coarse) { .insights-toggle { min-height: 44px; } }
-
-/* Fallback "typical for this kind of institute" block: clearly different from real data */
-.insights-estimate { margin-top: 0.7rem; padding: 0.7rem 0.8rem; border: 1px dashed rgba(245, 158, 11, 0.5); border-radius: 8px; background: rgba(245, 158, 11, 0.06); }
-.insights-estimate-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.55rem !important; font-size: 0.8rem; color: #fbbf24; }
-.insights-badge { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.55rem; border-radius: 99px; background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); }
-.insights-estimate .insights-note { margin-top: 0.55rem !important; }
+@media (pointer: coarse) { .insights-btn, .insights-retry { min-height: 44px; } }

@@ -3,7 +3,7 @@ import { getInsights, insightsEnabled } from '../utils/insights';
 import { instituteType } from '../utils/instituteTypes';
 import '../styles/insights.css';
 
-const memo = new Map(); // reopening a card never calls the server twice in one visit
+const memo = new Map(); // a college you already looked up opens instantly again during this visit
 const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
 const ROWS = [
   ['Tuition / year', 'tuition_fee_per_year_inr', inr],
@@ -15,31 +15,47 @@ const ROWS = [
   ['NIRF (Engineering)', 'nirf_engineering_rank', (v) => `#${v}`],
 ];
 
+function Tiles({ items }) {
+  return (
+    <dl className="insights-tiles">
+      {items.map(([label, value, wide]) => (
+        <div key={label} className={`insights-tile${wide ? ' wide' : ''}`}><dt>{label}</dt><dd>{value}</dd></div>
+      ))}
+    </dl>
+  );
+}
+
 // Typical ranges for this kind of institute. Always labelled as an estimate, never as this college's data.
 function Estimate({ institute }) {
   const t = instituteType(institute);
   return (
     <div className="insights-estimate">
       <p className="insights-estimate-head"><span className="insights-badge">Estimate</span> Typical for {t.label}, not specific to this college</p>
-      <dl className="insights-grid">
-        <dt>Average package</dt><dd>{t.avg}</dd>
-        <dt>Highest package</dt><dd>{t.highest}</dd>
-        <dt>Total course fee</dt><dd>{t.fees}</dd>
-      </dl>
+      <Tiles items={[['Average package', t.avg], ['Highest package', t.highest], ['Total course fee', t.fees]]} />
       <p className="insights-note">Rough ranges only. Actual figures vary by college and branch: check the official placement report.</p>
     </div>
   );
 }
 
-// The button and the popover are direct children of the parent ".action-group".
-export default function InstituteInsights({ institute, slowAfterMs = 25000 }) {
-  const [open, setOpen] = useState(false);
+// The toggle button, shown in the Action column.
+export function InsightsButton({ open, onToggle, controls }) {
+  if (!insightsEnabled) return null;
+  return (
+    <button type="button" className={`insights-btn${open ? ' open' : ''}`} aria-expanded={open} aria-controls={controls} onClick={onToggle}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+        <path d="M6 20V11M12 20V4M18 20v-6" />
+      </svg>
+      {open ? 'Hide Insights' : 'Fees & Placements'}
+    </button>
+  );
+}
+
+// A full-width row that opens directly under the result row. It starts the lookup when it appears.
+export function InsightsRow({ id, institute, colSpan = 5, slowAfterMs = 25000 }) {
   const [slow, setSlow] = useState(false); // true once the live lookup has taken longer than slowAfterMs
-  const [state, setState] = useState({ status: 'idle', data: null, error: '' });
+  const [state, setState] = useState(() => (memo.has(institute) ? { status: 'done', data: memo.get(institute), error: '' } : { status: 'loading', data: null, error: '' }));
   const ctrl = useRef(null);
   const timer = useRef(null);
-  useEffect(() => () => { ctrl.current?.abort(); clearTimeout(timer.current); }, []);
-  if (!insightsEnabled) return null;
 
   const load = async () => {
     if (memo.has(institute)) return setState({ status: 'done', data: memo.get(institute), error: '' });
@@ -47,6 +63,7 @@ export default function InstituteInsights({ institute, slowAfterMs = 25000 }) {
     setSlow(false);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setSlow(true), slowAfterMs);
+    ctrl.current?.abort();
     ctrl.current = new AbortController();
     try {
       const data = await getInsights(institute, ctrl.current.signal);
@@ -58,51 +75,45 @@ export default function InstituteInsights({ institute, slowAfterMs = 25000 }) {
     } finally { clearTimeout(timer.current); }
   };
 
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (next && state.status !== 'loading' && state.status !== 'done') load();
-  };
+  useEffect(() => {
+    if (state.status === 'loading') load();
+    return () => { ctrl.current?.abort(); clearTimeout(timer.current); }; // closing the row stops the lookup
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { status, data, error } = state;
   const d = data?.data || {};
-  const rows = ROWS.filter(([, key]) => d[key] != null);
-  const hasLive = rows.length > 0 || d.top_recruiters?.length > 0;
+  const live = ROWS.filter(([, key]) => d[key] != null).map(([label, key, fmt]) => [label, fmt(d[key])]);
+  if (d.data_year) live.push(['Data year', d.data_year]);
+  if (d.top_recruiters?.length > 0) live.push(['Top recruiters', d.top_recruiters.join(', '), true]);
+  const hasLive = live.length > (d.data_year ? 1 : 0);
+
   return (
-    <>
-      <button type="button" className={`insights-toggle${open ? ' open' : ''}`} aria-expanded={open} onClick={toggle}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-          <path d="M6 20V11M12 20V4M18 20v-6" />
-        </svg>
-        {open ? 'Hide Insights' : 'Fees & Placements'}
-      </button>
-      {open && (
-        <div className="insights-panel" role="region" aria-label={`Fees and placements for ${institute}`} aria-live="polite">
+    <tr className="insights-row" id={id}>
+      <td colSpan={colSpan}>
+        <div className="insights-card" role="region" aria-label={`Fees and placements for ${institute}`} aria-live="polite">
           {status === 'loading' && (
             <>
-              <p className="insights-muted">{slow ? 'Still checking official sources… typical figures shown meanwhile.' : 'Reading official sources… a live lookup can take up to a minute.'}</p>
+              <p className="insights-status"><span className="insights-spinner" aria-hidden="true" />
+                {slow ? 'Still checking official sources… typical figures shown meanwhile.' : 'Reading official sources… a live lookup can take up to a minute.'}</p>
               {slow && <Estimate institute={institute} />}
             </>
           )}
           {status === 'error' && (
             <>
-              <p className="insights-error">{error} <button type="button" className="insights-link" onClick={load}>Retry</button></p>
+              <p className="insights-error"><span>{error}</span> <button type="button" className="insights-retry" onClick={load}>Retry</button></p>
               <Estimate institute={institute} />
             </>
           )}
           {status === 'done' && !hasLive && (
             <>
-              <p className="insights-muted">No reliable official figures found for this institute.</p>
+              <p className="insights-status">No reliable official figures found for this institute.</p>
               <Estimate institute={institute} />
             </>
           )}
           {status === 'done' && hasLive && (
             <>
-              <dl className="insights-grid">
-                {rows.map(([label, key, fmt]) => (<React.Fragment key={key}><dt>{label}</dt><dd>{fmt(d[key])}</dd></React.Fragment>))}
-                {d.data_year && (<><dt>Data year</dt><dd>{d.data_year}</dd></>)}
-                {d.top_recruiters?.length > 0 && (<><dt>Top recruiters</dt><dd>{d.top_recruiters.join(', ')}</dd></>)}
-              </dl>
+              <Tiles items={live} />
               <p className="insights-note">
                 Extracted automatically by TinyFish
                 {data.source_url && <> from <a href={data.source_url} target="_blank" rel="noopener noreferrer">{data.source_title || 'the source page'}</a></>}
@@ -111,7 +122,7 @@ export default function InstituteInsights({ institute, slowAfterMs = 25000 }) {
             </>
           )}
         </div>
-      )}
-    </>
+      </td>
+    </tr>
   );
 }
