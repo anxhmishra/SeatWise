@@ -4,7 +4,7 @@ export const insightsEnabled = Boolean(BASE); // the feature needs the backend, 
 async function call(path, options) {
   const res = await fetch(`${BASE}${path}`, options);
   if (!res.ok) {
-    let msg = 'Could not load insights right now.';
+    let msg = `Could not load insights right now (error ${res.status}).`; // the number tells you what the server answered
     try { const j = await res.json(); if (typeof j.detail === 'string') msg = j.detail; } catch { /* keep default */ }
     throw new Error(msg);
   }

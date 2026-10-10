@@ -14,6 +14,8 @@ const ROWS = [
   ['NIRF (Engineering)', 'nirf_engineering_rank', (v) => `#${v}`],
 ];
 
+// Renders the button and, when open, a popover. Both are direct children of the parent ".action-group",
+// so the popover floats under the buttons on desktop and drops onto its own line inside the card on phones.
 export default function InstituteInsights({ institute }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState({ status: 'idle', data: null, error: '' });
@@ -46,13 +48,20 @@ export default function InstituteInsights({ institute }) {
   const rows = ROWS.filter(([, key]) => d[key] != null);
   const empty = rows.length === 0 && !(d.top_recruiters?.length);
   return (
-    <div>
-      <button type="button" className="insights-toggle" aria-expanded={open} onClick={toggle}>{open ? 'Hide insights' : 'Fees & placements'}</button>
+    <>
+      <button type="button" className={`insights-toggle${open ? ' open' : ''}`} aria-expanded={open} onClick={toggle}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+          <path d="M6 20V11M12 20V4M18 20v-6" />
+        </svg>
+        {open ? 'Hide Insights' : 'Fees & Placements'}
+      </button>
       {open && (
-        <div className="insights-panel" aria-live="polite">
-          {status === 'loading' && <p>Reading official sources… a live lookup can take up to a minute.</p>}
-          {status === 'error' && <p>{error} <button type="button" className="insights-link" onClick={load}>Retry</button></p>}
-          {status === 'done' && (empty ? <p>No reliable figures found for this institute.</p> : (
+        <div className="insights-panel" role="region" aria-label={`Fees and placements for ${institute}`} aria-live="polite">
+          {status === 'loading' && <p className="insights-muted">Reading official sources… a live lookup can take up to a minute.</p>}
+          {status === 'error' && (
+            <p className="insights-error">{error} <button type="button" className="insights-link" onClick={load}>Retry</button></p>
+          )}
+          {status === 'done' && (empty ? <p className="insights-muted">No reliable figures found for this institute.</p> : (
             <>
               <dl className="insights-grid">
                 {rows.map(([label, key, fmt]) => (<React.Fragment key={key}><dt>{label}</dt><dd>{fmt(d[key])}</dd></React.Fragment>))}
@@ -68,6 +77,6 @@ export default function InstituteInsights({ institute }) {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

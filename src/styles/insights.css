@@ -1,12 +1,35 @@
-.insights-toggle { margin-top: 0.4rem; background: none; border: 1px solid var(--card-border); color: var(--accent-yellow); border-radius: 99px;
-  padding: 0.2rem 0.75rem; font: inherit; font-size: 0.75rem; font-weight: 600; cursor: pointer; min-height: 32px; }
+/* Buttons sit together in the Action column, as before */
+.cell-action { position: relative; }
+.action-group { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; }
+
+.insights-toggle { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; cursor: pointer; min-height: 36px;
+  padding: 0.4rem 0.85rem; border-radius: 8px; font: inherit; font-size: 0.85rem; font-weight: 600;
+  color: #38bdf8; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.35); transition: all 0.2s ease; }
+.insights-toggle:hover, .insights-toggle.open { border-color: #38bdf8; background: rgba(56, 189, 248, 0.16); }
 .insights-toggle:focus-visible, .insights-link:focus-visible { outline: 2px solid var(--accent-yellow); outline-offset: 2px; }
-.insights-panel { margin-top: 0.6rem; padding: 0.8rem; border-radius: 8px; background: rgba(255, 255, 255, 0.04); font-size: 0.85rem; font-weight: 400; color: #d1d5db; }
+
+/* Popover under the buttons (desktop) */
+.insights-panel { position: absolute; right: 0; top: calc(100% - 0.6rem); z-index: 30; width: min(380px, 86vw); padding: 0.9rem 1rem;
+  border-radius: 10px; background: #0d1323; border: 1px solid var(--card-border); box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+  font-size: 0.85rem; font-weight: 400; color: #d1d5db; text-align: left; white-space: normal; }
 .insights-panel p { margin: 0; }
-.insights-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; margin: 0; }
+.insights-muted { color: var(--text-muted); }
+.insights-error { color: #f87171; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.insights-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; margin: 0; }
 .insights-grid dt { color: var(--text-muted); }
 .insights-grid dd { margin: 0; color: #fff; font-weight: 600; }
-.insights-note { margin-top: 0.6rem !important; font-size: 0.72rem; opacity: 0.75; line-height: 1.4; }
-.insights-note a, .insights-link { color: var(--accent-yellow); }
-.insights-link { background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; }
-@media (pointer: coarse) { .insights-toggle { min-height: 44px; padding: 0.4rem 1rem; } }
+.insights-note { margin-top: 0.7rem !important; font-size: 0.72rem; opacity: 0.75; line-height: 1.4; }
+.insights-note a { color: #38bdf8; }
+.insights-link { flex-shrink: 0; cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 600; color: #f87171; background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.4); border-radius: 6px; padding: 0.15rem 0.7rem; }
+
+/* On wide screens let the popover overflow the table box instead of being clipped */
+@media (min-width: 1100px) { .table-scroll { overflow: visible; } }
+
+/* Phones: each result is a card, so the panel drops onto its own full-width line inside it */
+@media (max-width: 700px) {
+  .cell-action .action-group { flex-wrap: wrap; justify-content: stretch; }
+  .cell-action .action-group > .btn, .cell-action .action-group > .insights-toggle { flex: 1 1 140px; width: auto; justify-content: center; }
+  .insights-panel { position: static; flex: 1 1 100%; width: auto; box-shadow: none; background: rgba(255, 255, 255, 0.04); }
+}
+@media (pointer: coarse) { .insights-toggle { min-height: 44px; } }

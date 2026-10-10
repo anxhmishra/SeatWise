@@ -3,6 +3,7 @@ import { loadCutoffsData, getPredictions, BRANCH_OPTIONS } from '../utils/predic
 import { readShortlist, writeShortlist, subscribeShortlist } from '../utils/shortlist';
 import InstituteInsights from '../components/InstituteInsights';
 import '../styles/animations.css';
+import '../styles/insights.css';
 
 const FILTERS = ['All', 'Safe', 'Target', 'Reach'];
 
@@ -199,19 +200,19 @@ export default function Predictor() {
                         return (
                           <tr key={`${item.institute}-${item.branch}-${idx}`} className="animate-table-row"
                             style={{ animationDelay: `${Math.min(idx * 0.04, 0.4)}s` }}>
-                            <td className="cell-institute">
-                              {item.institute}
-                              <InstituteInsights institute={item.institute} />
-                            </td>
+                            <td className="cell-institute">{item.institute}</td>
                             <td className="cell-branch">{item.branch}</td>
                             <td className="cell-rank nowrap" data-label="Closing rank">{item.expRank.toLocaleString()}</td>
                             <td className="nowrap">
                               <span className={`chance-tag ${tag}`}>{item.tag} {item.prob ? `(${item.prob})` : ''}</span>
                             </td>
-                            <td className="cell-action nowrap">
-                              <button type="button" className="btn btn-secondary shortlist-btn" disabled={isSaved(item)} onClick={() => handleShortlist(item)}>
-                                {isSaved(item) ? 'Saved' : '+ Shortlist'}
-                              </button>
+                            <td className="cell-action">
+                              <div className="action-group">
+                                <InstituteInsights institute={item.institute} />
+                                <button type="button" className="btn btn-secondary shortlist-btn" disabled={isSaved(item)} onClick={() => handleShortlist(item)}>
+                                  {isSaved(item) ? 'Saved' : '+ Shortlist'}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );

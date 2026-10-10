@@ -136,3 +136,14 @@ def test_set_known_institutes_normalises_and_can_be_disabled(monkeypatch):
     assert "NIT Trichy" in ir._known_institutes()
     monkeypatch.setenv("INSIGHTS_STRICT_NAMES", "0")
     assert ir._known_institutes() is None
+
+
+def test_missing_tinyfish_package_is_a_clear_503_not_a_crash(api, monkeypatch):
+    import sys
+    client, fake, mp = api
+    mp.undo()  # use the real _client() and the real validation rules, but no allowlist
+    monkeypatch.setattr(ir, "CACHE_PATH", ir.Path("/tmp/none_cache.json")); monkeypatch.setattr(ir, "SEED_PATH", ir.Path("/tmp/none_seed.json"))
+    monkeypatch.setenv("TINYFISH_API_KEY", "sk-tinyfish-test"); monkeypatch.setenv("INSIGHTS_STRICT_NAMES", "0")
+    monkeypatch.setitem(sys.modules, "tinyfish", None)  # makes "import tinyfish" raise ImportError
+    r = client.post("/api/insights/start", json={"institute": "NIT Trichy"})
+    assert r.status_code == 503 and "not installed" in r.json()["detail"]

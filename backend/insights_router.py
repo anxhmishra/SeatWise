@@ -152,7 +152,11 @@ def _client():
     key = _key()
     if not key:
         return None
-    from tinyfish import TinyFish
+    try:
+        from tinyfish import TinyFish
+    except ImportError:  # most often: the package is missing, or the server runs Python older than 3.11
+        log.error("The tinyfish package is not installed on this server (it needs Python 3.11+).")
+        raise HTTPException(status_code=503, detail="Live insights are unavailable: the TinyFish package is not installed on the server.")
     return TinyFish(api_key=key, timeout=30, max_retries=1)  # queue()/runs.get()/search are quick; the slow agent work happens on TinyFish's side
 
 
