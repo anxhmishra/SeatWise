@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getInsights, insightsEnabled } from '../utils/insights';
+import { instituteType } from '../utils/instituteTypes';
 import '../styles/insights.css';
 
 const memo = new Map(); // reopening a card never calls the server twice in one visit
@@ -14,18 +15,38 @@ const ROWS = [
   ['NIRF (Engineering)', 'nirf_engineering_rank', (v) => `#${v}`],
 ];
 
-// Renders the button and, when open, a popover. Both are direct children of the parent ".action-group",
-// so the popover floats under the buttons on desktop and drops onto its own line inside the card on phones.
-export default function InstituteInsights({ institute }) {
+// Typical ranges for this kind of institute. Always labelled as an estimate, never as this college's data.
+function Estimate({ institute }) {
+  const t = instituteType(institute);
+  return (
+    <div className="insights-estimate">
+      <p className="insights-estimate-head"><span className="insights-badge">Estimate</span> Typical for {t.label}, not specific to this college</p>
+      <dl className="insights-grid">
+        <dt>Average package</dt><dd>{t.avg}</dd>
+        <dt>Highest package</dt><dd>{t.highest}</dd>
+        <dt>Total course fee</dt><dd>{t.fees}</dd>
+      </dl>
+      <p className="insights-note">Rough ranges only. Actual figures vary by college and branch: check the official placement report.</p>
+    </div>
+  );
+}
+
+// The button and the popover are direct children of the parent ".action-group".
+export default function InstituteInsights({ institute, slowAfterMs = 25000 }) {
   const [open, setOpen] = useState(false);
+  const [slow, setSlow] = useState(false); // true once the live lookup has taken longer than slowAfterMs
   const [state, setState] = useState({ status: 'idle', data: null, error: '' });
   const ctrl = useRef(null);
-  useEffect(() => () => ctrl.current?.abort(), []); // stop polling if the row disappears
+  const timer = useRef(null);
+  useEffect(() => () => { ctrl.current?.abort(); clearTimeout(timer.current); }, []);
   if (!insightsEnabled) return null;
 
   const load = async () => {
     if (memo.has(institute)) return setState({ status: 'done', data: memo.get(institute), error: '' });
     setState({ status: 'loading', data: null, error: '' });
+    setSlow(false);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setSlow(true), slowAfterMs);
     ctrl.current = new AbortController();
     try {
       const data = await getInsights(institute, ctrl.current.signal);
@@ -34,7 +55,7 @@ export default function InstituteInsights({ institute }) {
       setState({ status: 'done', data, error: '' });
     } catch (e) {
       if (e.name !== 'AbortError') setState({ status: 'error', data: null, error: e.message });
-    }
+    } finally { clearTimeout(timer.current); }
   };
 
   const toggle = () => {
@@ -46,7 +67,7 @@ export default function InstituteInsights({ institute }) {
   const { status, data, error } = state;
   const d = data?.data || {};
   const rows = ROWS.filter(([, key]) => d[key] != null);
-  const empty = rows.length === 0 && !(d.top_recruiters?.length);
+  const hasLive = rows.length > 0 || d.top_recruiters?.length > 0;
   return (
     <>
       <button type="button" className={`insights-toggle${open ? ' open' : ''}`} aria-expanded={open} onClick={toggle}>
@@ -57,11 +78,25 @@ export default function InstituteInsights({ institute }) {
       </button>
       {open && (
         <div className="insights-panel" role="region" aria-label={`Fees and placements for ${institute}`} aria-live="polite">
-          {status === 'loading' && <p className="insights-muted">Reading official sources… a live lookup can take up to a minute.</p>}
-          {status === 'error' && (
-            <p className="insights-error">{error} <button type="button" className="insights-link" onClick={load}>Retry</button></p>
+          {status === 'loading' && (
+            <>
+              <p className="insights-muted">{slow ? 'Still checking official sources… typical figures shown meanwhile.' : 'Reading official sources… a live lookup can take up to a minute.'}</p>
+              {slow && <Estimate institute={institute} />}
+            </>
           )}
-          {status === 'done' && (empty ? <p className="insights-muted">No reliable figures found for this institute.</p> : (
+          {status === 'error' && (
+            <>
+              <p className="insights-error">{error} <button type="button" className="insights-link" onClick={load}>Retry</button></p>
+              <Estimate institute={institute} />
+            </>
+          )}
+          {status === 'done' && !hasLive && (
+            <>
+              <p className="insights-muted">No reliable official figures found for this institute.</p>
+              <Estimate institute={institute} />
+            </>
+          )}
+          {status === 'done' && hasLive && (
             <>
               <dl className="insights-grid">
                 {rows.map(([label, key, fmt]) => (<React.Fragment key={key}><dt>{label}</dt><dd>{fmt(d[key])}</dd></React.Fragment>))}
@@ -74,7 +109,7 @@ export default function InstituteInsights({ institute }) {
                 {data.fetched_at && <> on {new Date(data.fetched_at).toLocaleDateString('en-IN')}</>}. Verify on the official site before deciding.
               </p>
             </>
-          ))}
+          )}
         </div>
       )}
     </>

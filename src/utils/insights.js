@@ -1,10 +1,16 @@
-const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const raw = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+// Without "https://" the browser treats the address as a path on THIS website, and Vercel answers POSTs with 405.
+const BASE = raw && !/^https?:\/\//i.test(raw) ? `https://${raw}` : raw;
 export const insightsEnabled = Boolean(BASE); // the feature needs the backend, so it hides itself without one
 
 async function call(path, options) {
   const res = await fetch(`${BASE}${path}`, options);
   if (!res.ok) {
     let msg = `Could not load insights right now (error ${res.status}).`; // the number tells you what the server answered
+    if (res.status === 405) {
+      console.warn('[insights] 405 from', res.url, '- check that VITE_API_URL is your backend address, not this website');
+      msg = 'The insights request reached the wrong server (error 405).';
+    }
     try { const j = await res.json(); if (typeof j.detail === 'string') msg = j.detail; } catch { /* keep default */ }
     throw new Error(msg);
   }
