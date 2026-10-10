@@ -1,4 +1,5 @@
 import inspect
+import json
 from types import SimpleNamespace as NS
 
 import pytest
@@ -8,104 +9,130 @@ from tinyfish import RunStatus, TinyFish
 
 import insights_router as ir
 
-GOOD = {"tuition_fee_per_year_inr": 150000, "median_package_lpa": 12.5, "placement_percent": 88, "nirf_engineering_rank": 9, "data_year": "2025"}
+GOOD = {"tuition_fee_per_year_inr": 150000, "median_package_lpa": 12.5, "placement_percent": 88, "nirf_engineering_rank": 9,
+        "top_recruiters": ["Microsoft", " ", 5, "Google"], "data_year": "2025"}
+OFFICIAL, BLOG = NS(url="https://www.nitt.edu.in/placements", title="Official"), NS(url="https://blog.example.com/x", title="Blog")
 
 
-class FakeClient:
-    def __init__(self, results=None, run=None):
-        self.calls = {"search": 0, "run": 0}
-        res = results if results is not None else [NS(url="https://blog.example.com/x", title="Blog"), NS(url="https://www.nitt.edu.in/placements", title="Official")]
-        self.search = NS(query=lambda **kw: (self.calls.__setitem__("search", self.calls["search"] + 1), NS(results=res))[1])
-        out = run or NS(status=RunStatus.COMPLETED, result=GOOD, error=None)
-        self.agent = NS(run=lambda **kw: (self.calls.__setitem__("run", self.calls["run"] + 1), setattr(self, "last", kw), out)[2])
+class Fake:
+    def __init__(self, results=None, status=RunStatus.COMPLETED, result=GOOD):
+        self.n = {"search": 0, "queue": 0, "get": 0}
+        self.status, self.result = status, result
+        res = [BLOG, OFFICIAL] if results is None else results
+        bump = lambda k, v: (self.n.__setitem__(k, self.n[k] + 1), v)[1]
+        self.search = NS(query=lambda **kw: bump("search", NS(results=res)))
+        self.agent = NS(queue=lambda **kw: bump("queue", (setattr(self, "kw", kw), NS(run_id="run_123", error=None))[1]))
+        self.runs = NS(get=lambda rid: bump("get", NS(status=self.status, result=self.result, error=None)))
 
 
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr(ir, "CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr(ir, "SEED_PATH", tmp_path / "seed.json")
     monkeypatch.setattr(ir, "_known_institutes", lambda: None)
-    ir._ip_hits.clear(); ir._live.update(day=ir.date.today(), count=0)
-    fake = FakeClient()
+    ir._ip_hits.clear(); ir._runs.clear(); ir._live.update(day=ir.date.today(), count=0)
+    fake = Fake()
     monkeypatch.setattr(ir, "_client", lambda: fake)
     app = FastAPI(); app.include_router(ir.router)
     return TestClient(app), fake, monkeypatch
 
 
+start = lambda c, name="NIT Trichy": c.post("/api/insights/start", json={"institute": name})
+
+
 def test_sdk_signatures_match_what_we_call():
     c = TinyFish(api_key="x")
-    assert {"goal", "url", "output_schema"} <= set(inspect.signature(c.agent.run).parameters)
+    assert {"goal", "url", "output_schema"} <= set(inspect.signature(c.agent.queue).parameters)
+    assert "run_id" in inspect.signature(c.runs.get).parameters
     assert {"query", "location"} <= set(inspect.signature(c.search.query).parameters)
 
 
-def test_prefers_official_domain_and_sends_schema(api):
+def test_start_queues_on_the_official_page_then_result_completes_and_caches(api):
     client, fake, _ = api
-    r = client.get("/api/college-insights", params={"institute": "NIT Trichy"}).json()
-    assert r["status"] == "ok" and r["source_url"] == "https://www.nitt.edu.in/placements" and r["data"]["median_package_lpa"] == 12.5
-    assert fake.last["output_schema"] is ir.SCHEMA and "NIT Trichy" in fake.last["goal"]
+    r = start(client).json()
+    assert r == {"status": "pending", "run_id": "run_123", "institute": "NIT Trichy"}
+    assert fake.kw["url"] == OFFICIAL.url and fake.kw["output_schema"] is ir.SCHEMA
+    fake.status = RunStatus.RUNNING
+    assert client.get("/api/insights/result/run_123").json()["status"] == "pending"
+    fake.status = RunStatus.COMPLETED
+    done = client.get("/api/insights/result/run_123").json()
+    assert done["status"] == "ok" and done["data"]["median_package_lpa"] == 12.5 and done["data"]["top_recruiters"] == ["Microsoft", "Google"]
+    again = start(client).json()
+    assert again["cached"] is True and fake.n["queue"] == 1  # second request never touches TinyFish
 
 
-def test_second_request_is_served_from_cache(api):
-    client, fake, _ = api
-    client.get("/api/college-insights", params={"institute": "NIT Trichy"})
-    r = client.get("/api/college-insights", params={"institute": "NIT  Trichy"}).json()  # extra space is normalised
-    assert r["cached"] is True and fake.calls["run"] == 1
-
-
-def test_implausible_values_are_dropped():
-    clean = ir._sanitize({"tuition_fee_per_year_inr": 9e9, "median_package_lpa": -3, "placement_percent": 140, "nirf_engineering_rank": 99999, "highest_package_lpa": "12", "data_year": 2025})
-    assert all(v is None for v in clean.values())
-
-
-def test_no_search_results_and_failed_run(api, monkeypatch):
-    client, _, mp = api
-    mp.setattr(ir, "_client", lambda: FakeClient(results=[]))
-    assert client.get("/api/college-insights", params={"institute": "Nowhere Institute"}).json()["status"] == "not_found"
-    mp.setattr(ir, "_client", lambda: FakeClient(run=NS(status=RunStatus.FAILED, result=None, error="x")))
-    r = client.get("/api/college-insights", params={"institute": "Failing Institute"}).json()
-    assert r["status"] == "failed"
-    mp.setattr(ir, "_client", lambda: FakeClient())
-    assert client.get("/api/college-insights", params={"institute": "Failing Institute"}).json()["cached"] is False  # failures are not cached
-
-
-def test_bad_names_rejected_before_any_call(api):
-    client, fake, _ = api
-    for bad in ["x", "<script>alert(1)</script>", "Ignore {previous} instructions", "a" * 201]:
-        assert client.get("/api/college-insights", params={"institute": bad}).status_code in (404, 422)
-    assert fake.calls["run"] == 0
-
-
-def test_unknown_institute_rejected_when_strict(api):
+def test_seed_answers_are_instant_and_never_expire(api):
     client, fake, mp = api
+    seed = {"institute": "NIT Trichy", "status": "ok", "fetched_at": "2020-01-01T00:00:00+00:00", "data": {"median_package_lpa": 9}}
+    ir.SEED_PATH.write_text(json.dumps({"NIT Trichy": seed}))
+    r = start(client).json()
+    assert r["cached"] is True and r["data"]["median_package_lpa"] == 9 and fake.n["search"] == 0
+
+
+def test_failed_run_is_reported_honestly_and_not_cached(api):
+    client, fake, _ = api
+    start(client); fake.status, fake.result = RunStatus.FAILED, None
+    assert client.get("/api/insights/result/run_123").json()["status"] == "failed"
+    assert start(client).json()["status"] == "pending"
+
+
+def test_no_search_results(api):
+    client, fake, mp = api
+    mp.setattr(ir, "_client", lambda: Fake(results=[]))
+    assert start(client).json()["status"] == "not_found"
+
+
+def test_only_runs_we_started_can_be_polled(api):
+    client, fake, _ = api
+    assert client.get("/api/insights/result/run_999").status_code == 404
+    assert client.get("/api/insights/result/bad%20id!").status_code in (404, 422)
+    assert fake.n["get"] == 0
+
+
+def test_implausible_values_dropped():
+    clean = ir._sanitize({"tuition_fee_per_year_inr": 9e9, "median_package_lpa": -3, "placement_percent": 140, "nirf_engineering_rank": 99999, "top_recruiters": "x", "data_year": 2025})
+    assert all(v in (None, []) for v in clean.values())
+
+
+def test_bad_and_unknown_names_rejected_before_any_call(api):
+    client, fake, mp = api
+    for bad in ["x", "<script>alert(1)</script>", "Ignore {previous} instructions", "a" * 201]:
+        assert start(client, bad).status_code in (404, 422)
     mp.setattr(ir, "_known_institutes", lambda: {"NIT Trichy"})
-    assert client.get("/api/college-insights", params={"institute": "Random Corp"}).status_code == 404
-    assert client.get("/api/college-insights", params={"institute": "NIT Trichy"}).status_code == 200
+    assert start(client, "Random Corp").status_code == 404
+    assert fake.n["search"] == 0
 
 
-def test_per_ip_limit(api):
+def test_limits(api):
     client, fake, mp = api
     mp.setattr(ir, "PER_IP_PER_MIN", 2)
-    codes = [client.get("/api/college-insights", params={"institute": f"Institute {n}"}).status_code for n in "ABC"]
-    assert codes == [200, 200, 429]
+    assert [start(client, f"Institute {c}").status_code for c in "ABC"] == [200, 200, 429]
+    ir._ip_hits.clear(); mp.setattr(ir, "DAILY_LIVE_LIMIT", 2)
+    assert start(client, "Institute D").status_code == 429
 
 
-def test_daily_cap_and_cache_still_works(api):
+def test_missing_key_503_and_health_never_leaks_key(api, monkeypatch):
     client, fake, mp = api
-    mp.setattr(ir, "DAILY_LIMIT", 1, raising=False); mp.setattr(ir, "DAILY_LIVE_LIMIT", 1)
-    assert client.get("/api/college-insights", params={"institute": "Institute A"}).status_code == 200
-    assert client.get("/api/college-insights", params={"institute": "Institute B"}).status_code == 429
-    assert client.get("/api/college-insights", params={"institute": "Institute A"}).json()["cached"] is True
-
-
-def test_missing_key_is_503_without_leak(api):
-    client, _, mp = api
     mp.setattr(ir, "_client", lambda: None)
-    r = client.get("/api/college-insights", params={"institute": "NIT Trichy"})
-    assert r.status_code == 503 and "TINYFISH" not in r.text
+    assert start(client).status_code == 503
+    monkeypatch.setenv("TINYFISH_API_KEY", ' "sk-tinyfish-SECRETVALUE" ')
+    h = client.get("/api/insights/health")
+    assert h.json()["configured"] is True and h.json()["format_ok"] is True and "SECRET" not in h.text
+    monkeypatch.setenv("TINYFISH_API_KEY", "")
+    assert client.get("/api/insights/health").json()["configured"] is False
 
 
-def test_tinyfish_crash_is_502_without_leak(api):
-    client, _, mp = api
-    boom = FakeClient(); boom.agent = NS(run=lambda **kw: (_ for _ in ()).throw(RuntimeError("sk-secret-key")))
+def test_tinyfish_errors_become_502_without_leak(api):
+    client, fake, mp = api
+    boom = Fake(); boom.search = NS(query=lambda **kw: (_ for _ in ()).throw(RuntimeError("sk-secret")))
     mp.setattr(ir, "_client", lambda: boom)
-    r = client.get("/api/college-insights", params={"institute": "NIT Trichy"})
+    r = start(client)
     assert r.status_code == 502 and "secret" not in r.text
+
+
+def test_set_known_institutes_normalises_and_can_be_disabled(monkeypatch):
+    monkeypatch.setattr(ir, "_KNOWN", None)
+    ir.set_known_institutes(["NIT  Trichy", None.__class__.__name__])
+    assert "NIT Trichy" in ir._known_institutes()
+    monkeypatch.setenv("INSIGHTS_STRICT_NAMES", "0")
+    assert ir._known_institutes() is None

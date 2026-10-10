@@ -1,27 +1,29 @@
-export const insightsEnabled = true;
+const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+export const insightsEnabled = Boolean(BASE); // the feature needs the backend, so it hides itself without one
 
-export async function fetchInsights(instituteName) {
-  if (!instituteName) {
-    throw new Error('Institute name is required');
+async function call(path, options) {
+  const res = await fetch(`${BASE}${path}`, options);
+  if (!res.ok) {
+    let msg = 'Could not load insights right now.';
+    try { const j = await res.json(); if (typeof j.detail === 'string') msg = j.detail; } catch { /* keep default */ }
+    throw new Error(msg);
   }
+  return res.json();
+}
 
-  const response = await fetch(`/api/insights?institute=${encodeURIComponent(instituteName)}`);
-  const contentType = response.headers.get('content-type') || '';
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+});
 
-  // Handle non-JSON server responses (e.g., 404 or Render cold starts)
-  if (!contentType.includes('application/json')) {
-    if (response.status === 404) {
-      throw new Error('API route not found. Ensure FastAPI endpoint is /api/insights');
-    }
-    throw new Error('Backend server is waking up or unreachable. Please try again.');
+// Starts a lookup, then checks every 3 s (a live lookup takes ~20-90 s). Cached/seeded answers return immediately.
+export async function getInsights(institute, signal, { intervalMs = 3000, maxWaitMs = 120000 } = {}) {
+  let r = await call('/api/insights/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ institute }), signal });
+  const deadline = Date.now() + maxWaitMs;
+  while (r.status === 'pending') {
+    if (Date.now() > deadline) throw new Error('This is taking longer than usual. Please try again in a minute.');
+    await sleep(intervalMs, signal);
+    r = await call(`/api/insights/result/${encodeURIComponent(r.run_id)}`, { signal });
   }
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    // FastAPI outputs error messages in the "detail" key
-    throw new Error(data.detail || data.error || 'Failed to fetch insights.');
-  }
-
-  return data;
+  return r;
 }

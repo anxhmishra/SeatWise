@@ -1,87 +1,71 @@
-import React, { useState } from 'react';
-import { fetchInsights } from '../utils/insights';
+import React, { useEffect, useRef, useState } from 'react';
+import { getInsights, insightsEnabled } from '../utils/insights';
 import '../styles/insights.css';
+
+const memo = new Map(); // reopening a card never calls the server twice in one visit
+const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+const ROWS = [
+  ['Tuition / year', 'tuition_fee_per_year_inr', inr],
+  ['Total course fee', 'total_course_fee_inr', inr],
+  ['Median package', 'median_package_lpa', (v) => `${v} LPA`],
+  ['Average package', 'average_package_lpa', (v) => `${v} LPA`],
+  ['Highest package', 'highest_package_lpa', (v) => `${v} LPA`],
+  ['Placed', 'placement_percent', (v) => `${v}%`],
+  ['NIRF (Engineering)', 'nirf_engineering_rank', (v) => `#${v}`],
+];
 
 export default function InstituteInsights({ institute }) {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [state, setState] = useState({ status: 'idle', data: null, error: '' });
+  const ctrl = useRef(null);
+  useEffect(() => () => ctrl.current?.abort(), []); // stop polling if the row disappears
+  if (!insightsEnabled) return null;
+
+  const load = async () => {
+    if (memo.has(institute)) return setState({ status: 'done', data: memo.get(institute), error: '' });
+    setState({ status: 'loading', data: null, error: '' });
+    ctrl.current = new AbortController();
+    try {
+      const data = await getInsights(institute, ctrl.current.signal);
+      if (data.status === 'failed') return setState({ status: 'error', data: null, error: 'Live data could not be read for this institute right now.' });
+      memo.set(institute, data);
+      setState({ status: 'done', data, error: '' });
+    } catch (e) {
+      if (e.name !== 'AbortError') setState({ status: 'error', data: null, error: e.message });
+    }
+  };
 
   const toggle = () => {
-    if (!open && !data && !loading) {
-      loadData();
-    }
-    setOpen((prev) => !prev);
+    const next = !open;
+    setOpen(next);
+    if (next && state.status !== 'loading' && state.status !== 'done') load();
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchInsights(institute);
-      setData(res);
-    } catch (err) {
-      setError(err.message || 'Failed to load insights');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const avgPkg = data?.avg_package || data?.avgPackage;
-  const maxPkg = data?.highest_package || data?.highestPackage;
-  const fees = data?.fee_structure || data?.fees;
-  const recruiters = data?.top_recruiter || data?.topRecruiters;
-
+  const { status, data, error } = state;
+  const d = data?.data || {};
+  const rows = ROWS.filter(([, key]) => d[key] != null);
+  const empty = rows.length === 0 && !(d.top_recruiters?.length);
   return (
-    <div className="insights-container" data-open={open}>
-      <button
-        type="button"
-        className="insights-toggle"
-        aria-expanded={open}
-        onClick={toggle}
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="18" y1="20" x2="18" y2="10" />
-          <line x1="12" y1="20" x2="12" y2="4" />
-          <line x1="6" y1="20" x2="6" y2="14" />
-        </svg>
-        {open ? 'Hide Insights' : 'Fees & Placements'}
-      </button>
-
+    <div>
+      <button type="button" className="insights-toggle" aria-expanded={open} onClick={toggle}>{open ? 'Hide insights' : 'Fees & placements'}</button>
       {open && (
         <div className="insights-panel" aria-live="polite">
-          {loading && <p className="insights-loading">Fetching analytics...</p>}
-
-          {error && (
-            <div className="insights-error">
-              <span>{error}</span>
-              <button type="button" className="insights-retry-btn" onClick={loadData}>
-                Retry
-              </button>
-            </div>
-          )}
-
-          {data && (
-            <div className="insights-body">
-              <h4 className="insights-title">{data.institute || institute}</h4>
+          {status === 'loading' && <p>Reading official sources… a live lookup can take up to a minute.</p>}
+          {status === 'error' && <p>{error} <button type="button" className="insights-link" onClick={load}>Retry</button></p>}
+          {status === 'done' && (empty ? <p>No reliable figures found for this institute.</p> : (
+            <>
               <dl className="insights-grid">
-                {avgPkg && <> <dt>Avg Package:</dt> <dd>{avgPkg}</dd> </>}
-                {maxPkg && <> <dt>Highest Package:</dt> <dd>{maxPkg}</dd> </>}
-                {fees && <> <dt>Total Fees:</dt> <dd>{fees}</dd> </>}
-                {recruiters && <> <dt>Top Recruiters:</dt> <dd>{recruiters}</dd> </>}
+                {rows.map(([label, key, fmt]) => (<React.Fragment key={key}><dt>{label}</dt><dd>{fmt(d[key])}</dd></React.Fragment>))}
+                {d.data_year && (<><dt>Data year</dt><dd>{d.data_year}</dd></>)}
+                {d.top_recruiters?.length > 0 && (<><dt>Top recruiters</dt><dd>{d.top_recruiters.join(', ')}</dd></>)}
               </dl>
-            </div>
-          )}
+              <p className="insights-note">
+                Extracted automatically by TinyFish
+                {data.source_url && <> from <a href={data.source_url} target="_blank" rel="noopener noreferrer">{data.source_title || 'the source page'}</a></>}
+                {data.fetched_at && <> on {new Date(data.fetched_at).toLocaleDateString('en-IN')}</>}. Verify on the official site before deciding.
+              </p>
+            </>
+          ))}
         </div>
       )}
     </div>

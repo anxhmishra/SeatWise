@@ -1,5 +1,6 @@
-"""Warm the insights cache before a demo (run from the backend folder):
-   python -m scripts.prefetch_insights --limit 10 --match "National Institute of Technology" """
+"""Pre-fetch answers into data/insights_seed.json, then COMMIT that file (run from the backend folder):
+   python -m scripts.prefetch_insights --limit 10 --match "National Institute of Technology"
+Review the numbers against the official pages before committing: these become instant, never-expiring answers."""
 import argparse
 import time
 
@@ -16,14 +17,19 @@ def main():
     if client is None:
         raise SystemExit("Set TINYFISH_API_KEY first.")
     names = [n for n in sorted(engine.df_master["institute"].dropna().unique()) if a.match.lower() in n.lower()][: a.limit]
+    seeded = ir._read(ir.SEED_PATH)
     for n in names:
-        if ir._cache_get(n):
-            print("cached   ", n)
+        if n in seeded:
+            print("already seeded", n)
             continue
-        rec = ir.fetch_live(client, n)
-        if rec["status"] != "failed":
-            ir._cache_put(n, rec)
-        print(rec["status"].ljust(9), n)
+        try:
+            rec = ir.fetch_blocking(client, n)
+        except Exception as e:  # keep going: one bad page should not stop the batch
+            print("error         ", n, type(e).__name__)
+            continue
+        if rec and rec["status"] == "ok":
+            ir._cache_put(n, rec, ir.SEED_PATH)
+        print((rec or {"status": "failed"})["status"].ljust(14), n)
         time.sleep(1)
 
 
